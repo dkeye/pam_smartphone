@@ -29,13 +29,16 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
     }
 
     rv = pam_get_item(pamh, PAM_AUTHTOK, (void *) &password);
-    if (rv == PAM_SUCCESS && password) {
+    if (rv == PAM_SUCCESS && password) {  // если пароль уже был получен в других модулях
         password = strdup(password);
     } else {
+        // иначе получаем
+        // заполняем структуру диалога с пользователем
         sprintf(password_promt, "Password: ");
         msg.msg_style = PAM_PROMPT_ECHO_OFF;
         msg.msg = password_promt;
 
+        // получаем функцию для вызова диалога
         rv = pam_get_item(pamh, PAM_CONV, (const void **) &conv);
         if (rv != PAM_SUCCESS) {
             rv = PAM_AUTHINFO_UNAVAIL;
@@ -47,6 +50,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags,
             goto out;
         }
 
+        // вызов диалога и получение ответа
         rv = conv->conv(1, (const struct pam_message **) msgp, &resp, conv->appdata_ptr);
         if (rv != PAM_SUCCESS) {
             rv = PAM_AUTHINFO_UNAVAIL;
