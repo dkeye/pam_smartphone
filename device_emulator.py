@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Emulate device for pam-smartphone
+# Emulates device for pam-smartphone
 
 import argparse
 import asyncio
