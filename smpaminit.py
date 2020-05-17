@@ -8,13 +8,14 @@ import getpass
 import hmac
 import socket
 import subprocess
+import sys
 import time
+from contextlib import closing
 from exceptions import EnvironmentError
 from hashlib import sha256
 from os import fchmod
 from os.path import join, expanduser, exists
 from stat import S_IREAD, S_IWRITE
-from urllib2 import urlopen, Request, URLError
 
 KEY_FILE = ".pam_smartphone/key"
 PORT = 48888
@@ -76,9 +77,11 @@ def get_config(path):
         return key
 
 
-def is_open(sock, ip, port):
+def is_open(ip, port):
+    sock = socket.socket()
+    sock.settimeout(0.05)
     try:
-        sock.connect((ip, int(port)))
+        sock.connect((ip, port))
         sock.shutdown(socket.SHUT_RDWR)
         return True
     except socket.error:
@@ -92,12 +95,11 @@ def find_device():
     gateway_addr = subprocess.check_output(cmd).split()[2]  # 192.168.0.105
     print "gateway address {}".format(gateway_addr)
     head = gateway_addr.rsplit('.', 1)[0]  # 192.168.0
-    sock = socket.socket()
-    sock.settimeout(2)
-    print "device search ",
+    print "device search",
     for addr in (".".join((head, str(tail))) for tail in xrange(1, 256)):
-        rv = is_open(sock, addr, PORT)
-        sock.close()
+        print '\b.', ;
+        sys.stdout.flush()
+        rv = is_open(addr, PORT)
         if rv:
             print "device found at {}".format(addr)
             return addr
@@ -109,20 +111,23 @@ def find_device():
 
 def ask_device(device_addr):
     user = getpass.getuser()
-    addr = ":".join((device_addr, str(PORT)))
-    req = Request(addr, data=user)
-    try:
-        response = urlopen(req)
-    except URLError, err:
-        print "error asking device", err
-        exit()
-    else:
-        return response.read()
+    address = (device_addr, PORT)
+    with closing(socket.socket()) as s:
+        s.settimeout(20)
+        try:
+            s.connect(address)
+            s.send(user)
+            token = s.recv(64)
+        except socket.error, err:
+            print "error asking device", err
+            exit()
+        else:
+            return token
 
 
 def get_hotp(secret_key):
-    now = time.time() // 10
-    return hmac.new(key=secret_key, msg=str(now), digestmod=sha256)
+    now = time.time() // 20
+    return hmac.new(key=secret_key, msg=str(now), digestmod=sha256).hexdigest()
 
 
 def check(path, secret_key):
@@ -133,9 +138,12 @@ def check(path, secret_key):
 
     secret_key = secret_key or get_config(path)
     device_addr = find_device()
-    hotp = ask_device(device_addr)
-    if hotp == get_hotp(secret_key):
-        print "SYNC SUCCESS"
+    for _ in range(3):
+        hotp = ask_device(device_addr)
+        match = get_hotp(secret_key)
+        if hotp == match:
+            print "SYNC SUCCESS"
+            break
 
 
 def main():
